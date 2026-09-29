@@ -1,0 +1,38 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>web3d</title></head>
+<body style="margin:0;background:#000">
+<canvas id="c"></canvas>
+<script type="importmap">
+{"imports":{
+  "three":"../node_modules/three/build/three.module.js",
+  "three/addons/":"../node_modules/three/examples/jsm/",
+  "@pmndrs/assets/":"../node_modules/@pmndrs/assets/"
+}}
+</script>
+<script type="module">
+import { Engine } from './core.js';
+const q = new URLSearchParams(location.search);
+const w = +q.get('w') || 1920, h = +q.get('h') || 1080;
+const canvas = document.getElementById('c'); canvas.width = w; canvas.height = h;
+const engine = new Engine(canvas, w, h);
+let ctx = null;
+function dispose(c) {
+  c.scene.traverse((o) => {
+    if (o.geometry) o.geometry.dispose();
+    const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+    ms.forEach((m) => m.dispose());
+  });
+  c.post.dispose();
+}
+window.loadScene = async (name) => {
+  if (ctx) { dispose(ctx); ctx = null; }
+  const mod = await import(`./scenes/${name}.js`);
+  const c = await mod.default(engine);
+  engine.finish(c);
+  ctx = c; window.ctx = c;
+  return true;
+};
+window.renderFrame = (t, quality = 0.93) => { engine.render(ctx, t); return canvas.toDataURL('image/jpeg', quality); };
+window.ready = true;
+</script>
+</body></html>

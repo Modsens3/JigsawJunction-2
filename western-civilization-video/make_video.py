@@ -1,393 +1,371 @@
-"""Φτιάχνει το βίντεο «Η Ιστορία του Δυτικού Πολιτισμού» (~3 λεπτά).
+"""Η Ιστορία του Δυτικού Πολιτισμού – ~3 λεπτά, 3D (three.js) + τίτλοι/κάρτες (Pillow) + μουσική.
 
 Χρήση:
-    python3 make_video.py                  -> western_civilization.mp4
-    python3 make_video.py --stills φάκελος -> στιγμιότυπα PNG για έλεγχο
+    python3 make_video.py                     # ολόκληρο το βίντεο -> western_civilization.mp4
+    python3 make_video.py --only=greece       # μόνο μία σκηνή (segments/…mp4)
+    python3 make_video.py --stills=folder     # ένα στιγμιότυπο ανά σκηνή για έλεγχο
+    python3 make_video.py --fast              # χαμηλή ποιότητα (960x540) για γρήγορη δοκιμή
+Οι σκηνές που έχουν ήδη αποδοθεί (segments/*.mp4) παραλείπονται, ώστε να μπορείς να ξαναρχίσεις.
 """
 import os
+import shutil
 import subprocess
 import sys
 from multiprocessing import Pool
 
 import imageio_ffmpeg
-from PIL import Image
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 import music
-import scenes as sc
-from draw_utils import (CARD_BG, FPS, H, S, W, Canvas, alpha, back_out, clamp, ease, ease_out, lerp, vgrad,
-                        wrap)
+import scenes_data as sd
+from draw_utils import Canvas, alpha, back_out, clamp, ease, ease_out, lerp, wrap
 from icons import ALL_ICONS
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+W, H, FPS, S = 1280, 720, 24, 2
 GOLD = (240, 196, 96)
-
-# ---------------------------------------------------------------- περιεχόμενο
-# (τίτλος, εποχή, λεζάντα, φόντο, σχέδιο, [εφευρέσεις], ετικέτα χρονογραμμής)
-# κάθε εφεύρεση: (εικονίδιο, όνομα, χρονιά/τόπος, περιγραφή)
-SCENES = [
-    dict(key="egypt", title="Οι πρώτοι πολιτισμοί", era="Μεσοποταμία & Αίγυπτος · ~3500–1000 π.Χ.",
-         caption="Στις όχθες του Τίγρη, του Ευφράτη και του Νείλου χτίζονται οι πρώτες πόλεις, "
-                 "οι ζιγκουράτ και οι πυραμίδες. Γεννιούνται η γραφή και οι πρώτοι γραπτοί νόμοι.",
-         bg=((0, (96, 150, 210)), (0.45, (236, 206, 160)), (0.7, (246, 214, 164)), (1, (210, 170, 110))),
-         draw=sc.draw_egypt, label="3500 π.Χ.",
-         inv=[("wheel", "Ο τροχός", "~3500 π.Χ. · Μεσοποταμία",
-               "Οι πρώτοι τροχοί ήταν συμπαγείς, από τρεις σανίδες. Άλλαξαν τις μεταφορές, "
-               "τη γεωργία και την αγγειοπλαστική."),
-              ("tablet", "Η γραφή", "~3200 π.Χ. · Ουρούκ",
-               "Οι Σουμέριοι πιέζουν καλάμι σε υγρό πηλό: η σφηνοειδής γραφή. "
-               "Για πρώτη φορά η γνώση καταγράφεται και διασώζεται.")]),
-    dict(key="greece", title="Αρχαία Ελλάδα", era="Κλασική Αθήνα · 5ος αιώνας π.Χ.",
-         caption="Η Αθήνα γεννά τη δημοκρατία (508 π.Χ.), τη φιλοσοφία, το θέατρο και την ιστορία. "
-                 "Ο Παρθενώνας (447–432 π.Χ.) γίνεται σύμβολο του δυτικού κόσμου.",
-         bg=((0, (60, 130, 210)), (0.6, (170, 212, 240)), (1, (170, 212, 240))),
-         draw=sc.draw_greece, label="450 π.Χ.",
-         inv=[("alphabet", "Αλφάβητο με φωνήεντα", "~800 π.Χ. · Ελλάδα",
-               "Οι Έλληνες πρόσθεσαν φωνήεντα στο φοινικικό αλφάβητο. Από αυτό προέρχονται "
-               "το λατινικό και το κυριλλικό αλφάβητο."),
-              ("pythagoras", "Γεωμετρία & απόδειξη", "~530–300 π.Χ. · Πυθαγόρας, Ευκλείδης",
-               "Τα μαθηματικά γίνονται επιστήμη με λογικές αποδείξεις. Τα «Στοιχεία» του Ευκλείδη "
-               "διδάσκονταν για 2.000 χρόνια.")]),
-    dict(key="alexandria", title="Ελληνιστική εποχή", era="Μέγας Αλέξανδρος & Αλεξάνδρεια · 336–31 π.Χ.",
-         caption="Ο Μέγας Αλέξανδρος διαδίδει τον ελληνικό πολιτισμό ως την Ινδία. Η Αλεξάνδρεια, "
-                 "με τον Φάρο και τη μεγάλη Βιβλιοθήκη, γίνεται το κέντρο της γνώσης.",
-         bg=((0, (18, 24, 64)), (0.4, (90, 60, 110)), (0.66, (236, 140, 90)), (1, (34, 56, 100))),
-         draw=sc.draw_alexandria, label="300 π.Χ.",
-         inv=[("antikythera", "Μηχανισμός Αντικυθήρων", "~150–100 π.Χ. · Ελλάδα",
-               "Ο πρώτος γνωστός «αναλογικός υπολογιστής»: με δεκάδες χάλκινα γρανάζια "
-               "προέβλεπε εκλείψεις και τις θέσεις των πλανητών."),
-              ("screw", "Κοχλίας του Αρχιμήδη", "~250 π.Χ. · Συρακούσες",
-               "Μια έλικα μέσα σε σωλήνα που, καθώς γυρίζει, ανεβάζει νερό. "
-               "Χρησιμοποιείται ακόμη και σήμερα σε αντλίες.")]),
-    dict(key="rome", title="Ρωμαϊκή Αυτοκρατορία", era="27 π.Χ. – 476 μ.Χ.",
-         caption="Η Ρώμη ενώνει όλη τη Μεσόγειο με δρόμους, νόμους και τη λατινική γλώσσα. "
-                 "Το Κολοσσαίο (80 μ.Χ.) χωρούσε περίπου 50.000 θεατές.",
-         bg=((0, (100, 156, 214)), (0.6, (240, 214, 172)), (1, (240, 214, 172))),
-         draw=sc.draw_rome, label="80 μ.Χ.",
-         inv=[("aqueduct", "Σκυρόδεμα & υδραγωγεία", "~300 π.Χ. – 200 μ.Χ. · Ρώμη",
-               "Με ηφαιστειακή τέφρα οι Ρωμαίοι έφτιαξαν σκυρόδεμα που αντέχει 2.000 χρόνια. "
-               "Τα υδραγωγεία έφερναν νερό στις πόλεις."),
-              ("scales", "Ρωμαϊκό δίκαιο", "450 π.Χ. – 534 μ.Χ.",
-               "Οι νόμοι γράφονται και ισχύουν για όλους. Το ρωμαϊκό δίκαιο είναι η βάση "
-               "των νομικών συστημάτων της Ευρώπης μέχρι σήμερα.")]),
-    dict(key="byzantium", title="Βυζάντιο & Χριστιανισμός", era="330 – 1453 μ.Χ.",
-         caption="Ο Χριστιανισμός διαδίδεται σε όλη την αυτοκρατορία. Η Δυτική Ρώμη πέφτει (476), αλλά "
-                 "το Βυζάντιο διασώζει για 1.000 χρόνια την αρχαία γνώση. Αγία Σοφία, 537 μ.Χ.",
-         bg=((0, (70, 46, 96)), (0.35, (180, 110, 90)), (0.7, (246, 196, 120)), (1, (246, 196, 120))),
-         draw=sc.draw_byzantium, label="537",
-         inv=[("greekfire", "Υγρό πυρ", "~672 μ.Χ. · Κωνσταντινούπολη",
-               "Το μυστικό όπλο του Βυζαντίου: φωτιά που έκαιγε ακόμη και πάνω στο νερό. "
-               "Έσωσε την Πόλη από πολιορκίες."),
-              ("codex", "Το βιβλίο με σελίδες", "1ος–6ος αι. μ.Χ.",
-               "Ο «κώδικας» αντικαθιστά τους κυλίνδρους παπύρου. Μοναχοί και λόγιοι "
-               "αντιγράφουν και διασώζουν τα αρχαία κείμενα.")]),
-    dict(key="medieval", title="Μεσαίωνας", era="Δυτική Ευρώπη · 500 – 1450",
-         caption="Κάστρα, μοναστήρια και γοτθικοί καθεδρικοί ναοί. Οι ανεμόμυλοι δουλεύουν στα χωράφια "
-                 "και ιδρύονται τα πρώτα πανεπιστήμια (Μπολόνια 1088, Οξφόρδη, Παρίσι).",
-         bg=((0, (120, 170, 220)), (0.6, (220, 234, 240)), (1, (220, 234, 240))),
-         draw=sc.draw_medieval, label="1200",
-         inv=[("clock", "Μηχανικό ρολόι", "~1300 · Ευρώπη",
-               "Τα πρώτα ρολόγια στους πύργους είχαν μόνο έναν δείκτη, της ώρας. "
-               "Η ζωή αρχίζει να οργανώνεται με ακρίβεια."),
-              ("glasses", "Γυαλιά οράσεως", "~1286 · Ιταλία",
-               "Δύο φακοί ενωμένοι με ένα καρφί. Οι λόγιοι και οι τεχνίτες μπορούν να "
-               "διαβάζουν και να δουλεύουν για πολλά ακόμη χρόνια.")]),
-    dict(key="renaissance", title="Αναγέννηση", era="Φλωρεντία & Ιταλία · 1400 – 1600",
-         caption="Η Ευρώπη ξαναανακαλύπτει την αρχαιότητα. Ο τρούλος του Μπρουνελέσκι (1436), "
-                 "ο Λεονάρντο, ο Μιχαήλ Άγγελος και ο Ραφαήλ αλλάζουν την τέχνη και την επιστήμη.",
-         bg=((0, (96, 150, 214)), (0.6, (248, 218, 170)), (1, (248, 218, 170))),
-         draw=sc.draw_renaissance, label="1450",
-         inv=[("press", "Τυπογραφία", "~1450 · Γουτεμβέργιος, Μάιντς",
-               "Κινητά μεταλλικά στοιχεία και πιεστήριο: τα βιβλία τυπώνονται γρήγορα και "
-               "φθηνά. Η γνώση φτάνει σε όλους."),
-              ("leonardo", "Οι μηχανές του Λεονάρντο", "~1490 · Λεονάρντο ντα Βίντσι",
-               "Η «εναέρια έλικα», πρόγονος του ελικοπτέρου, και εκατοντάδες ακόμη σχέδια, "
-               "αιώνες πριν από την εποχή τους.")]),
-    dict(key="discovery", title="Εποχή των Ανακαλύψεων", era="1492 – 1600",
-         caption="Το 1492 ο Κολόμβος φτάνει στην Αμερική. Το 1519–1522 η αποστολή του Μαγγελάνου "
-                 "κάνει τον πρώτο γύρο της Γης. Ο κόσμος «μεγαλώνει».",
-         bg=((0, (70, 150, 226)), (0.58, (200, 230, 245)), (1, (40, 110, 170))),
-         draw=sc.draw_discovery, label="1492",
-         inv=[("compass", "Ναυτική πυξίδα", "12ος–15ος αι.",
-               "Η μαγνητική βελόνα δείχνει πάντα τον Βορρά. Με την πυξίδα και τον αστρολάβο "
-               "τα πλοία διασχίζουν τους ωκεανούς."),
-              ("globe", "Η παλαιότερη υδρόγειος", "1492 · Μάρτιν Μπεχάιμ",
-               "Φτιάχτηκε λίγο πριν επιστρέψει ο Κολόμβος – γι' αυτό δεν έχει την Αμερική, "
-               "που οι Ευρωπαίοι δεν γνώριζαν ακόμη!")]),
-    dict(key="science", title="Επιστημονική Επανάσταση", era="1543 – 1687",
-         caption="Ο Κοπέρνικος βάζει τον Ήλιο στο κέντρο (1543). Γαλιλαίος, Κέπλερ και Νεύτων "
-                 "(νόμος της βαρύτητας, 1687) εξηγούν τη φύση με πειράματα και μαθηματικά.",
-         bg=((0, (6, 10, 34)), (0.7, (34, 36, 86)), (1, (24, 34, 44))),
-         draw=sc.draw_science, label="1609",
-         inv=[("telescope", "Τηλεσκόπιο", "1609 · Γαλιλαίος",
-               "Ο Γαλιλαίος βλέπει τους 4 μεγάλους δορυφόρους του Δία και τους κρατήρες της "
-               "Σελήνης. Η Γη δεν είναι το κέντρο του σύμπαντος."),
-              ("microscope", "Μικροσκόπιο", "1665 · Ρόμπερτ Χουκ",
-               "Ο Χουκ βλέπει μικρά «κελιά» σε έναν φελλό και τα ονομάζει κύτταρα. "
-               "Ανοίγει ένας ολόκληρος αόρατος κόσμος.")]),
-    dict(key="revolution", title="Διαφωτισμός & Επαναστάσεις", era="1700 – 1830",
-         caption="Λογική, ελευθερία, ανθρώπινα δικαιώματα. Αμερικανική Επανάσταση (1776), "
-                 "Γαλλική Επανάσταση (1789) και Ελληνική Επανάσταση (1821).",
-         bg=((0, (66, 86, 130)), (0.5, (200, 160, 150)), (0.75, (236, 190, 140)), (1, (150, 140, 120))),
-         draw=sc.draw_revolution, label="1789",
-         inv=[("rod", "Αλεξικέραυνο", "1752 · Βενιαμίν Φραγκλίνος",
-               "Ο Φραγκλίνος αποδεικνύει ότι ο κεραυνός είναι ηλεκτρισμός – και μια μεταλλική "
-               "ράβδος τον οδηγεί με ασφάλεια στη γη."),
-              ("vaccine", "Εμβόλιο", "1796 · Έντουαρντ Τζένερ",
-               "Το πρώτο εμβόλιο, για την ευλογιά. Η ευλογιά εξαλείφθηκε τελικά το 1980 και "
-               "σώθηκαν εκατομμύρια ζωές.")]),
-    dict(key="industry", title="Βιομηχανική Επανάσταση", era="1760 – 1900",
-         caption="Μηχανές, εργοστάσια και σιδηρόδρομοι. Ο πρώτος δημόσιος σιδηρόδρομος ατμού "
-                 "ανοίγει το 1825. Εκατομμύρια άνθρωποι μετακομίζουν στις πόλεις.",
-         bg=((0, (120, 104, 100)), (0.5, (210, 160, 120)), (0.7, (236, 190, 140)), (1, (90, 80, 70))),
-         draw=sc.draw_industry, label="1850",
-         inv=[("steam", "Ατμομηχανή", "1776 · Τζέιμς Βατ",
-               "Ο Βατ κάνει την ατμομηχανή τέσσερις φορές πιο αποδοτική. Ο ατμός κινεί "
-               "εργοστάσια, τρένα και πλοία."),
-              ("bulb", "Ηλεκτρικός λαμπτήρας", "1879 · Τόμας Έντισον",
-               "Ένα νήμα άνθρακα που λάμπει για ώρες. Την ίδια εποχή: τηλέγραφος (1837) "
-               "και τηλέφωνο (1876, Γκράχαμ Μπελ).")]),
-    dict(key="modern", title="Ο 20ός αιώνας", era="1900 – 1990",
-         caption="Δύο Παγκόσμιοι Πόλεμοι φέρνουν τεράστια καταστροφή. Μετά χτίζονται η ειρήνη, "
-                 "η δημοκρατία και η ευρωπαϊκή ενοποίηση (1957 – σήμερα Ευρωπαϊκή Ένωση).",
-         bg=((0, (90, 150, 220)), (0.7, (210, 228, 244)), (1, (80, 90, 90))),
-         draw=sc.draw_modern, label="1903",
-         inv=[("plane", "Αεροπλάνο", "1903 · Αδελφοί Ράιτ",
-               "17 Δεκεμβρίου 1903: η πρώτη πτήση με κινητήρα κράτησε 12 δευτερόλεπτα. "
-               "Μόλις 66 χρόνια μετά, ο άνθρωπος πάτησε στη Σελήνη!"),
-              ("penicillin", "Πενικιλίνη", "1928 · Αλεξάντερ Φλέμινγκ",
-               "Ένας μύκητας σκοτώνει τα βακτήρια γύρω του: το πρώτο αντιβιοτικό. "
-               "Οι λοιμώξεις παύουν να είναι θανατηφόρες.")]),
-    dict(key="space", title="Διάστημα & Ψηφιακή εποχή", era="1957 – σήμερα",
-         caption="Sputnik (1957), ο άνθρωπος στη Σελήνη με τον Saturn V (1969). Υπολογιστές, "
-                 "διαδίκτυο, κινητά και τεχνητή νοημοσύνη συνδέουν όλο τον πλανήτη.",
-         bg=((0, (2, 4, 16)), (0.6, (14, 20, 56)), (0.8, (30, 40, 80)), (1, (40, 44, 52))),
-         draw=sc.draw_space, label="1969",
-         inv=[("chip", "Τρανζίστορ & μικροτσίπ", "1947 / 1958",
-               "Εκατομμύρια μικροσκοπικοί διακόπτες σε ένα κομμάτι πυρίτιο. Χάρη σε αυτά "
-               "έχουμε υπολογιστές σε κάθε σπίτι και τσέπη."),
-              ("web", "Παγκόσμιος Ιστός", "1989 · Τιμ Μπέρνερς-Λι, CERN",
-               "Ιστοσελίδες συνδεδεμένες με συνδέσμους. Σήμερα δισεκατομμύρια άνθρωποι "
-               "επικοινωνούν αμέσως, ακόμη και από ένα κινητό.")]),
-]
-
-TITLE_T = 9.0
-SCENE_T = 12.4
-EPI_T = 12.0
-TIMELINE = [("title", TITLE_T, None)] + [("scene", SCENE_T, s) for s in SCENES] + [("epilogue", EPI_T, None)]
-DURATION = sum(d for _, d, _ in TIMELINE)
-
-TITLE_BG = ((0, (8, 12, 38)), (0.5, (52, 36, 86)), (0.8, (226, 122, 72)), (1, (40, 24, 32)))
-EPI_BG = ((0, (10, 14, 36)), (1, (34, 26, 64)))
-
-EPI_ICONS = [("wheel", "Τροχός"), ("alphabet", "Αλφάβητο"), ("antikythera", "Αντικύθηρα"),
-             ("aqueduct", "Υδραγωγείο"), ("clock", "Ρολόι"), ("press", "Τυπογραφία"),
-             ("compass", "Πυξίδα"), ("telescope", "Τηλεσκόπιο"), ("steam", "Ατμός"),
-             ("bulb", "Λαμπτήρας"), ("plane", "Αεροπλάνο"), ("web", "Διαδίκτυο")]
+CARD_BG = (20, 24, 40)
+FRAMES = os.path.join(HERE, "frames")
+SEGS = os.path.join(HERE, "segments")
 
 
-# ---------------------------------------------------------------- επικαλύψεις
-def draw_heading(c, t, s):
+# ---------------------------------------------------------------- γυαλί / επίπεδα
+def rmask(size, r, ss=3):
+    m = Image.new("L", (size[0] * ss, size[1] * ss), 0)
+    ImageDraw.Draw(m).rounded_rectangle([0, 0, size[0] * ss - 1, size[1] * ss - 1], radius=r * ss, fill=255)
+    return m.resize(size, Image.LANCZOS)
+
+
+def glass(base, box, r=18, blur=16, tint=(8, 12, 26), a=150, shadow=True):
+    """«Γυάλινο» πάνελ: θολώνει ό,τι υπάρχει πίσω του και το σκουραίνει."""
+    x0, y0, x1, y1 = [int(v) for v in box]
+    x0, y0 = max(0, x0), max(0, y0)
+    x1, y1 = min(W, x1), min(H, y1)
+    if x1 - x0 < 4 or y1 - y0 < 4:
+        return
+    if shadow:
+        sh = Image.new("L", (W, H), 0)
+        sh.paste(rmask((x1 - x0, y1 - y0), r), (x0, y0 + 6))
+        sh = sh.filter(ImageFilter.GaussianBlur(14)).point(lambda v: int(v * 0.5))
+        base.paste((0, 0, 0), (0, 0), sh)
+    crop = base.crop((x0, y0, x1, y1)).filter(ImageFilter.GaussianBlur(blur))
+    crop = Image.blend(crop, Image.new("RGB", crop.size, tint), a / 255)
+    # ελαφριά διαβάθμιση: πιο φωτεινό στην κορυφή
+    grad = Image.linear_gradient("L").resize(crop.size).point(lambda v: int(255 - v * 0.12))
+    crop = ImageChops.multiply(crop, Image.merge("RGB", (grad, grad, grad)))
+    base.paste(crop, (x0, y0), rmask(crop.size, r))
+
+
+def new_ui():
+    return Image.new("RGBA", (W * S, H * S), (0, 0, 0, 0))
+
+
+def with_alpha(layer, a):
+    if a >= 0.999:
+        return layer
+    al = layer.getchannel("A").point(lambda v: int(v * clamp(a)))
+    out = layer.copy()
+    out.putalpha(al)
+    return out
+
+
+# ---------------------------------------------------------------- στοιχεία διεπαφής
+def ui_heading(c, t, s):
     a = ease(t / 0.9)
-    dx = -30 * (1 - ease_out(t / 0.9))
-    sh = (2, 3, (0, 0, 0, int(170 * a)))
-    c.text(34 + dx, 26, s["title"], 38, alpha((255, 255, 255), a), "serif_b", "la", shadow=sh)
-    c.text(36 + dx, 76, s["era"], 20, alpha(GOLD, a), "sans_b", "la", shadow=(1, 2, (0, 0, 0, int(170 * a))))
+    dx = -34 * (1 - ease_out(t / 0.9))
+    c.text(52 + dx, 40, s["title"], 42, alpha((255, 255, 255), a), "serif_b", "la", shadow=(2, 3, (0, 0, 0, int(190 * a))))
+    w = 60 + 40 * ease(t / 1.2)
+    c.line([(54 + dx, 98), (54 + dx + w, 98)], alpha(GOLD, a), 3, cap=False)
+    c.text(54 + dx, 108, s["era"], 20, alpha(GOLD, a), "sans_b", "la", shadow=(1, 2, (0, 0, 0, int(190 * a))))
 
 
-def draw_caption(c, t, s):
+CAP_BOX = (44, 566, 1236, 640)
+
+
+def ui_caption(c, t, s):
     a = ease((t - 0.7) / 0.8)
-    c.rect(0, 588, W, 654, fill=(8, 10, 22, int(185 * max(a, 0.001))))
     if a <= 0:
         return
-    lines = wrap(s["caption"], 19, "sans", 1180)
-    y0 = 621 - (len(lines) - 1) * 13
+    lines = wrap(s["caption"], 20, "sans", 1130)
+    y0 = 603 - (len(lines) - 1) * 14
     for i, ln in enumerate(lines):
-        c.text(W / 2, y0 + i * 26, ln, 19, alpha((245, 240, 230), a), "sans", "mm")
+        c.text(W / 2, y0 + i * 28, ln, 20, alpha((246, 242, 234), a), "sans", "mm")
 
 
-def draw_timeline(c, t, idx):
-    c.rect(0, 654, W, H, fill=(8, 10, 22, 225))
-    n = len(SCENES)
+def ui_timeline(c, t, idx):
+    import math
+    n = len(sd.SCENES)
     xs = [80 + i * (W - 160) / (n - 1) for i in range(n)]
-    y = 674
-    c.line([(xs[0], y), (xs[-1], y)], (90, 94, 110), 3, cap=False)
+    y = 678
+    c.line([(xs[0], y), (xs[-1], y)], (110, 114, 130, 200), 3, cap=False)
     prev = xs[idx - 1] if idx > 0 else xs[0]
     cur = lerp(prev, xs[idx], ease(t / 1.6))
     c.line([(xs[0], y), (cur, y)], GOLD, 3, cap=False)
     for i, x in enumerate(xs):
+        lab = sd.SCENES[i]["label"]
         if i < idx or (i == idx and cur >= x - 0.5):
-            r = 7 + 2.5 * (0.5 + 0.5 * __import__("math").sin(t * 4)) if i == idx else 5
-            c.circle(x, y, r, fill=GOLD if i == idx else (200, 164, 84))
+            r = 7 + 2.5 * (0.5 + 0.5 * math.sin(t * 4)) if i == idx else 5
+            c.circle(x, y, r, fill=GOLD if i == idx else (206, 168, 88))
         else:
-            c.circle(x, y, 5, fill=(40, 44, 60), outline=(120, 124, 140), width=1.5)
-        lab = SCENES[i]["label"]
+            c.circle(x, y, 5, fill=(30, 34, 50), outline=(140, 144, 160), width=1.5)
         if i == idx:
-            c.text(x, 700, lab, 14, GOLD, "sans_b", "mm")
+            c.text(x, 702, lab, 14, GOLD, "sans_b", "mm")
         else:
-            c.text(x, 700, lab, 12, (150, 154, 170), "sans", "mm")
+            c.text(x, 702, lab, 12, (170, 174, 190), "sans", "mm")
 
 
-def _bulb_mark(c, x, y):
-    c.circle(x, y - 3, 7, fill=GOLD)
-    c.rect(x - 3.5, y + 3, x + 3.5, y + 8, fill=(200, 200, 200))
+CARD = (890, 104, 1238, 548)
 
 
-CARD = (872, 110, 1248, 584)
+def card_slide(t):
+    return (1 - ease_out((t - 0.6) / 0.8)) * 420
 
 
-def draw_card(img, t, T, s):
-    import math
+def ui_card(base, ui, t, T, s):
     x0, y0, x1, y1 = CARD
     if t < 0.6:
         return
-    off = (1 - ease_out((t - 0.6) / 0.8)) * 420
-    c = Canvas(img)
-    c.rect(x0 + off + 4, y0 + 6, x1 + off + 4, y1 + 6, fill=(0, 0, 0, 90), r=18)
-    c.rect(x0 + off, y0, x1 + off, y1, fill=CARD_BG, outline=GOLD, width=2, r=18)
+    off = card_slide(t)
+    glass(base, (x0 + off, y0, x1 + off, y1), r=20, blur=18, a=165)
+    c = Canvas(ui)
+    c.rect(x0 + off, y0, x1 + off, y1, outline=alpha(GOLD, 0.85), width=1.6, r=20)
     invs = s["inv"]
     starts = [1.1, 6.7]
     k = 0 if t < starts[1] else 1
-    _bulb_mark(c, x0 + off + 26, y0 + 28)
-    c.text(x0 + off + 42, y0 + 28, "ΕΦΕΥΡΕΣΗ", 16, GOLD, "sans_b", "lm")
-    c.text(x1 + off - 22, y0 + 28, f"{k + 1}/{len(invs)}", 15, (150, 154, 170), "sans_b", "rm")
-    c.line([(x0 + off + 18, y0 + 50), (x1 + off - 18, y0 + 50)], (70, 70, 90), 1, cap=False)
+    cx = (x0 + x1) / 2 + off
+    # κεφαλίδα
+    c.circle(x0 + off + 26, y0 + 28, 7, fill=GOLD)
+    c.rect(x0 + off + 22.5, y0 + 34, x0 + off + 29.5, y0 + 39, fill=(210, 210, 210))
+    c.text(x0 + off + 44, y0 + 29, "ΕΦΕΥΡΕΣΗ", 16, GOLD, "sans_b", "lm")
+    c.text(x1 + off - 22, y0 + 29, f"{k + 1}/{len(invs)}", 15, (170, 174, 190), "sans_b", "rm")
+    c.line([(x0 + off + 18, y0 + 52), (x1 + off - 18, y0 + 52)], (120, 124, 140, 160), 1, cap=False)
     ts = t - starts[k]
     end = starts[1] if k == 0 else T - 0.45
     op = min(ease(ts / 0.45), ease((end - t) / 0.4)) if k == 0 else ease(ts / 0.45)
     if op <= 0.01:
         return
-    box = [int(round((x0 + off) * S)), int(round((y0 + 52) * S)), int(round((x1 + off) * S)), int(round((y1 - 4) * S))]
-    box = [max(0, box[0]), box[1], min(W * S, box[2]), box[3]]
-    if box[2] <= box[0]:
-        return
-    base = img.crop(box)
-    layer = base.copy()
-    lc = Canvas(layer, ox=box[0] / S, oy=box[1] / S)
+    layer = new_ui()
+    lc = Canvas(layer)
     key, name, year, desc = invs[k]
-    cx = (x0 + x1) / 2 + off
-    pop = 0.85 + 0.15 * back_out(ts / 0.6)
-    ALL_ICONS[key](lc.sub(cx, y0 + 160, 196 * pop), max(0.0, ts))
-    y = y0 + 282
-    for ln in wrap(name, 23, "serif_b", 340):
+    pop = 0.86 + 0.14 * back_out(ts / 0.6)
+    my = y0 + 168
+    # μενταγιόν: σκιά, πλάκα, στεφάνι
+    lc.circle(cx + 3, my + 8, 106 * pop, fill=(0, 0, 0, 110))
+    lc.circle(cx, my, 106 * pop, fill=CARD_BG)
+    ALL_ICONS[key](lc.sub(cx, my, 196 * pop), max(0.0, ts))
+    lc.circle(cx, my, 106 * pop, outline=alpha(GOLD, 0.9), width=2)
+    lc.circle(cx, my, 100 * pop, outline=(255, 255, 255, 40), width=1)
+    y = y0 + 300
+    for ln in wrap(name, 23, "serif_b", 316):
         lc.text(cx, y, ln, 23, (255, 255, 255), "serif_b", "mm")
         y += 29
     lc.text(cx, y + 2, year, 15, GOLD, "sans_b", "mm")
     y += 30
-    for ln in wrap(desc, 16, "sans", 332):
-        lc.text(x0 + off + 22, y, ln, 16, (222, 224, 232), "sans", "lm")
+    for ln in wrap(desc, 16, "sans", 306):
+        lc.text(x0 + off + 22, y, ln, 16, (226, 228, 236), "sans", "lm")
         y += 22
-    img.paste(Image.blend(base, layer, op), box[:2])
+    ui.alpha_composite(with_alpha(layer, op))
 
 
-def draw_epilogue(img, c, t, T):
-    sc.draw_epilogue_bg(c, t, T)
+# ---------------------------------------------------------------- επίλογος (2D φόντο + μενταγιόν)
+def epilogue_bg(t, T):
+    import math, random
+    img = Image.linear_gradient("L").resize((W, H))
+    top, bot = (10, 14, 36), (44, 30, 78)
+    g = Image.merge("RGB", [img.point(lambda v, a=a, b=b: int(a + (b - a) * v / 255)) for a, b in zip(top, bot)])
+    lay = Image.new("RGBA", (W * 2, H * 2), (0, 0, 0, 0))
+    d = ImageDraw.Draw(lay)
+    rnd = random.Random(31)
+    for i in range(260):
+        x, y = rnd.uniform(0, W), rnd.uniform(0, H)
+        z = rnd.choice((0.4, 0.7, 1.0, 1.4))
+        x = (x - t * 6 * z) % W
+        tw = 0.55 + 0.45 * math.sin(t * rnd.uniform(1, 3) + i)
+        r = z * 1.3 * 2
+        d.ellipse([x * 2 - r, y * 2 - r, x * 2 + r, y * 2 + r], fill=(255, 246, 225, int(230 * tw)))
+    lay = lay.filter(ImageFilter.GaussianBlur(0.6)).resize((W, H), Image.LANCZOS)
+    g = g.convert("RGBA")
+    g.alpha_composite(lay)
+    # μαλακή λάμψη πίσω από τους τίτλους
+    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse([W / 2 - 420, H / 2 - 230, W / 2 + 420, H / 2 + 230], fill=(120, 90, 200, 60))
+    g.alpha_composite(glow.filter(ImageFilter.GaussianBlur(90)))
+    return g.convert("RGB")
+
+
+def ui_epilogue(base, ui, t, T):
+    c = Canvas(ui)
     a = ease((t - 0.2) / 0.8)
-    c.text(W / 2, 70, "Οι εφευρέσεις που διαμόρφωσαν τη Δύση", 34, alpha(GOLD, a), "serif_b", "mm",
-           shadow=(2, 3, (0, 0, 0, int(150 * a))))
-    for i, (key, lab) in enumerate(EPI_ICONS):
+    c.text(W / 2, 66, "Οι εφευρέσεις που διαμόρφωσαν τη Δύση", 36, alpha(GOLD, a), "serif_b", "mm", shadow=(2, 3, (0, 0, 0, int(160 * a))))
+    for i, (key, lab) in enumerate(sd.EPI_ICONS):
         tk = 0.6 + i * 0.32
         if t < tk:
             continue
         p = back_out((t - tk) / 0.55)
         cx = 140 + (i % 6) * 200
-        cy = 200 + (i // 6) * 196
-        r = 70 * p
+        cy = 196 + (i // 6) * 196
+        r = 72 * p
+        c.circle(cx + 3, cy + 8, r + 3, fill=(0, 0, 0, 110))
         c.circle(cx, cy, r + 3, fill=GOLD)
         c.circle(cx, cy, r, fill=CARD_BG)
-        ALL_ICONS[key](c.sub(cx, cy, 112 * p), t - tk)
+        ALL_ICONS[key](c.sub(cx, cy, 118 * p), t - tk)
+        c.circle(cx, cy, r, outline=(255, 255, 255, 40), width=1)
         la = ease((t - tk - 0.2) / 0.4)
-        c.text(cx, cy + 88, lab, 16, alpha((240, 236, 226), la), "sans_b", "mm")
+        c.text(cx, cy + 92, lab, 16, alpha((240, 236, 226), la), "sans_b", "mm")
     b = ease((t - 5.4) / 1.0)
     if b > 0:
-        c.text(W / 2, 556, "«Αν είδα πιο μακριά, είναι επειδή στάθηκα στους ώμους γιγάντων.»", 24,
-               alpha((245, 240, 230), b), "serif", "mm")
+        c.text(W / 2, 556, "«Αν είδα πιο μακριά, είναι επειδή στάθηκα στους ώμους γιγάντων.»", 24, alpha((245, 240, 230), b), "serif", "mm")
         c.text(W / 2, 590, "— Ισαάκ Νεύτων", 17, alpha(GOLD, b), "sans", "mm")
     d = ease((t - 7.6) / 1.0)
     if d > 0:
-        c.text(W / 2, 648, "Η ιστορία συνεχίζεται… και τη γράφουμε εμείς.", 28, alpha((255, 214, 130), d),
-               "serif_b", "mm", shadow=(2, 3, (0, 0, 0, int(150 * d))))
+        c.text(W / 2, 650, "Η ιστορία συνεχίζεται… και τη γράφουμε εμείς.", 28, alpha((255, 214, 130), d), "serif_b", "mm", shadow=(2, 3, (0, 0, 0, int(150 * d))))
 
 
-# ---------------------------------------------------------------- απόδοση καρέ
-def locate(time):
-    acc = 0.0
-    for i, (kind, d, s) in enumerate(TIMELINE):
-        if time < acc + d or i == len(TIMELINE) - 1:
-            return i, kind, d, s, time - acc
-        acc += d
+def ui_title(ui, t, T):
+    c = Canvas(ui)
+    a = ease((t - 1.2) / 1.3)
+    if a > 0:
+        c.text(W / 2, 128, "Η Ιστορία του", 40, alpha((255, 244, 226), a), "serif", "mm", shadow=(2, 3, (0, 0, 0, int(190 * a))))
+        c.text(W / 2, 206, "Δυτικού Πολιτισμού", 78, alpha((255, 208, 116), a), "serif_b", "mm", shadow=(3, 5, (0, 0, 0, int(200 * a))))
+    b = ease((t - 2.8) / 1.2)
+    if b > 0:
+        w = 300 * b
+        c.line([(W / 2 - w, 262), (W / 2 + w, 262)], alpha(GOLD, b), 2, cap=False)
+        c.text(W / 2, 296, "Από τους Σουμέριους μέχρι την ψηφιακή εποχή", 26, alpha((246, 240, 230), b), "sans", "mm", shadow=(2, 2, (0, 0, 0, int(170 * b))))
+        c.text(W / 2, 334, "…και οι εφευρέσεις που άλλαξαν τον κόσμο", 22, alpha(GOLD, b), "serif", "mm", shadow=(2, 2, (0, 0, 0, int(170 * b))))
 
 
-_BLACK = None
+# ---------------------------------------------------------------- σύνθεση καρέ
+def bottom_shade(base, strength=0.62, h=200):
+    g = Image.linear_gradient("L").resize((W, h))          # 0 πάνω -> 255 κάτω
+    g = g.point(lambda v: int(v * strength))
+    base.paste((4, 6, 14), (0, H - h), g)
 
 
-def render(frame):
-    global _BLACK
-    time = frame / FPS
-    i, kind, T, s, t = locate(time)
-    if kind == "title":
-        img = vgrad(TITLE_BG).copy()
-        c = Canvas(img)
-        sc.draw_title(c, t, T)
-    elif kind == "epilogue":
-        img = vgrad(EPI_BG).copy()
-        c = Canvas(img)
-        draw_epilogue(img, c, t, T)
+def top_shade(base, strength=0.35, h=190):
+    g = Image.linear_gradient("L").resize((W, h)).transpose(Image.FLIP_TOP_BOTTOM).point(lambda v: int(v * strength))
+    base.paste((4, 6, 14), (0, 0), g)
+
+
+def compose(args):
+    idx, kind, key, T, t, path, fade = args
+    if kind == "epilogue":
+        base = epilogue_bg(t, T)
     else:
-        img = vgrad(s["bg"]).copy()
-        c = Canvas(img)
-        s["draw"](c, t, T)
-        draw_caption(c, t, s)
-        draw_timeline(c, t, i - 1)
-        draw_heading(c, t, s)
-        draw_card(img, t, T, s)
-    out = img.reduce(S)
+        base = Image.open(path).convert("RGB")
+        if base.size != (W, H):
+            base = base.resize((W, H), Image.LANCZOS)
+    ui = new_ui()
     if kind == "title":
-        f = ease(t / 1.0) * ease((T - t) / 0.45)
+        top_shade(base, 0.30, 300)
+        ui_title(ui, t, T)
     elif kind == "epilogue":
-        f = ease(t / 0.45) * ease((T - t) / 1.6)
+        ui_epilogue(base, ui, t, T)
     else:
-        f = ease(t / 0.45) * ease((T - t) / 0.45)
-    if f < 0.999:
-        if _BLACK is None:
-            _BLACK = Image.new("RGB", (W, H), (0, 0, 0))
-        out = Image.blend(_BLACK, out, max(0.0, f))
+        s = sd.BY_KEY[key]
+        top_shade(base, 0.42, 200)
+        bottom_shade(base, 0.60, 190)
+        a = ease((t - 0.7) / 0.8)
+        if a > 0.01:
+            glass(base, CAP_BOX, r=16, blur=14, a=int(120 * a), shadow=False)
+        c = Canvas(ui)
+        ui_heading(c, t, s)
+        ui_caption(c, t, s)
+        ui_timeline(c, t, sd.SCENES.index(s))
+        ui_card(base, ui, t, T, s)
+    out = base.convert("RGBA")
+    out.alpha_composite(ui.resize((W, H), Image.LANCZOS))
+    out = out.convert("RGB")
+    if fade < 0.999:
+        out = Image.blend(Image.new("RGB", (W, H), (0, 0, 0)), out, max(0.0, fade))
     return out.tobytes()
 
 
-def stills(outdir):
+def fade_of(kind, t, T):
+    if kind == "title":
+        return ease(t / 1.0) * ease((T - t) / 0.5)
+    if kind == "epilogue":
+        return ease(t / 0.5) * ease((T - t) / 1.8)
+    return ease(t / 0.5) * ease((T - t) / 0.5)
+
+
+# ---------------------------------------------------------------- απόδοση σκηνών
+def render_frames(key, nframes, outdir, extra=()):
+    shutil.rmtree(outdir, ignore_errors=True)
     os.makedirs(outdir, exist_ok=True)
-    acc = 0.0
-    for i, (kind, d, s) in enumerate(TIMELINE):
-        for frac in ((0.55,) if kind != "scene" else (0.35, 0.8)):
-            tm = acc + d * frac
-            data = render(int(tm * FPS))
-            name = f"{i:02d}_{kind if s is None else s['key']}_{int(frac * 100)}.png"
-            Image.frombytes("RGB", (W, H), data).save(os.path.join(outdir, name))
-            print("saved", name)
-        acc += d
+    cmd = ["node", os.path.join(HERE, "render3d.js"), f"--scene={key}", "--from=0", f"--to={nframes}", f"--out={outdir}",
+           f"--fps={FPS}", f"--w={W}", f"--h={H}", "--q=0.94", *extra]
+    subprocess.run(cmd, check=True, cwd=HERE)
+
+
+def make_segment(item, only=None, fast=False):
+    i, (kind, T, s) = item
+    key = "title" if kind == "title" else "epilogue" if kind == "epilogue" else s["key"]
+    seg = os.path.join(SEGS, f"{i:02d}_{key}.mp4")
+    if os.path.exists(seg) and only is None:
+        print(f"[{i:02d}] {key}: έτοιμο ({seg})")
+        return seg
+    n = int(round(T * FPS))
+    d = os.path.join(FRAMES, key)
+    if kind != "epilogue":
+        print(f"[{i:02d}] {key}: 3D απόδοση {n} καρέ…", flush=True)
+        render_frames(key, n, d)
+    os.makedirs(SEGS, exist_ok=True)
+    tmp = seg + ".tmp.mp4"
+    p = subprocess.Popen([FFMPEG, "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
+                          "-c:v", "libx264", "-preset", "medium", "-crf", "15", "-pix_fmt", "yuv420p", "-movflags", "+faststart", tmp], stdin=subprocess.PIPE)
+    jobs = [(i, kind, key, T, f / FPS, os.path.join(d, f"{f:05d}.jpg"), fade_of(kind, f / FPS, T)) for f in range(n)]
+    print(f"[{i:02d}] {key}: σύνθεση διεπαφής…", flush=True)
+    with Pool(os.cpu_count()) as pool:
+        for data in pool.imap(compose, jobs, chunksize=4):
+            p.stdin.write(data)
+    p.stdin.close()
+    p.wait()
+    os.replace(tmp, seg)
+    shutil.rmtree(d, ignore_errors=True)
+    return seg
+
+
+def stills(outdir, keys=None):
+    os.makedirs(outdir, exist_ok=True)
+    for i, (kind, T, s) in enumerate(sd.TIMELINE):
+        key = "title" if kind == "title" else "epilogue" if kind == "epilogue" else s["key"]
+        if keys and key not in keys.split(","):
+            continue
+        t = T * (0.62 if kind != "scene" else 0.55)
+        tmp = os.path.join(FRAMES, "_still", key)
+        os.makedirs(tmp, exist_ok=True)
+        path = os.path.join(tmp, "s.jpg")
+        if kind != "epilogue":
+            subprocess.run(["node", os.path.join(HERE, "render3d.js"), f"--scene={key}", f"--still={t}", f"--file={path}", f"--w={W}", f"--h={H}"], check=True, cwd=HERE)
+        data = compose((i, kind, key, T, t, path, 1.0))
+        Image.frombytes("RGB", (W, H), data).save(os.path.join(outdir, f"{i:02d}_{key}.png"))
+        print("saved", key, flush=True)
 
 
 def main():
-    here = os.path.dirname(os.path.abspath(__file__))
-    if len(sys.argv) > 2 and sys.argv[1] == "--stills":
-        stills(sys.argv[2])
+    args = dict(a.lstrip("-").split("=", 1) if "=" in a else (a.lstrip("-"), True) for a in sys.argv[1:])
+    if "stills" in args:
+        return stills(args["stills"], args.get("keys"))
+    only = args.get("only")
+    items = list(enumerate(sd.TIMELINE))
+    if only:
+        items = [(i, it) for i, it in items if (it[2] and it[2]["key"] == only) or it[0] == only]
+    segs = [make_segment(it, only=only) for it in items]
+    if only:
         return
-    wav = os.path.join(here, "music.wav")
-    out = os.path.join(here, "western_civilization.mp4")
-    print(f"Διάρκεια: {DURATION:.1f} δευτ. · Μουσική…")
-    music.generate(DURATION, wav, intro=TITLE_T)
-    frames = int(DURATION * FPS)
-    cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error",
-           "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
-           "-i", wav, "-c:v", "libx264", "-preset", "medium", "-crf", "21", "-pix_fmt", "yuv420p",
-           "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out]
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    with Pool(os.cpu_count()) as pool:
-        for k, data in enumerate(pool.imap(render, range(frames), chunksize=6)):
-            proc.stdin.write(data)
-            if k % 300 == 0:
-                print(f"  καρέ {k}/{frames}", flush=True)
-    proc.stdin.close()
-    proc.wait()
+    total = sum(T for _, T, _ in sd.TIMELINE)
+    wav = os.path.join(HERE, "music.wav")
+    print(f"Μουσική ({total:.1f} δευτ.)…", flush=True)
+    music.generate(total, wav, intro=sd.TITLE_T)
+    lst = os.path.join(SEGS, "list.txt")
+    with open(lst, "w") as f:
+        for sgm in segs:
+            f.write(f"file '{sgm}'\n")
+    out = os.path.join(HERE, "western_civilization.mp4")
+    subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", lst, "-i", wav, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+                    "-shortest", "-movflags", "+faststart", out], check=True)
     os.remove(wav)
     print("Έτοιμο:", out)
 
