@@ -574,10 +574,10 @@ export function smokeColumn(ctx, { n = 24, life = 9, rise = 26, spread = 6, size
 
 // πλήθος ανθρώπων (instanced): χιτώνας + κεφάλι· κάθε άτομο περπατά κατά μήκος πολυγραμμής. ptsFn(i) -> [[x,z],...]
 export function crowd(ctx, { n = 40, path, height = () => 0, colors = [0xf1ece0, 0x3a5f9a, 0xb03a2e, 0xd6b25a, 0x5a7a4a], scale = 1.0, seed = 1, speed = 1.3, skin = 0xd7a377, robe = 1.0, spread = 0.5 } = {}) {
-  const r = rng(seed), bodyG = new THREE.CylinderGeometry(0.17 * robe, 0.34 * robe, 1.3, 8); bodyG.translate(0, 0.75, 0);
+  const r = rng(seed), bodyG = new THREE.CylinderGeometry(0.14 * robe, 0.27 * robe, 1.3, 8); bodyG.translate(0, 0.75, 0);
   const shoulders = new THREE.SphereGeometry(0.24, 8, 6); shoulders.scale(1.2, 0.7, 0.8); shoulders.translate(0, 1.36, 0);
   const body = mergeGeometries([bodyG.toNonIndexed(), shoulders.toNonIndexed()].map((g) => { g.deleteAttribute('uv'); return g; }));
-  const bodies = new THREE.InstancedMesh(body, new THREE.MeshLambertMaterial({ color: 0xffffff }), n), heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.15, 10, 8), new THREE.MeshLambertMaterial({ color: skin }), n);
+  const bodies = new THREE.InstancedMesh(body, new THREE.MeshLambertMaterial({ color: 0xffffff }), n), heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.2, 10, 8), new THREE.MeshLambertMaterial({ color: skin }), n);
   bodies.castShadow = heads.castShadow = true; bodies.receiveShadow = true; bodies.frustumCulled = heads.frustumCulled = false;
   const ph = [], lens = [], pts = [];
   for (let i = 0; i < n; i++) {
@@ -593,7 +593,7 @@ export function crowd(ctx, { n = 40, path, height = () => 0, colors = [0xf1ece0,
       const u = (d - cum[k - 1]) / Math.max(1e-6, cum[k] - cum[k - 1]), x0 = p[k - 1][0], z0 = p[k - 1][1], x1 = p[k][0], z1 = p[k][1], dx = x1 - x0, dz = z1 - z0, dl = Math.hypot(dx, dz) || 1;
       const x = lerp(x0, x1, u) - dz / dl * f.off, z = lerp(z0, z1, u) + dx / dl * f.off, yaw = Math.atan2(dx, dz), bob = Math.abs(Math.sin(t * f.sp * 3.6 + f.w)) * 0.06 * f.s;
       pp.set(x, height(x, z) + bob, z); e.set(0, yaw, Math.sin(t * f.sp * 1.8 + f.w) * 0.05); q.setFromEuler(e); sv.set(f.s, f.s, f.s); m.compose(pp, q, sv); bodies.setMatrixAt(i, m);
-      pp.y += 1.66 * f.s; m.compose(pp, q, sv); heads.setMatrixAt(i, m);
+      pp.y += 1.6 * f.s; m.compose(pp, q, sv); heads.setMatrixAt(i, m);
     }
     bodies.instanceMatrix.needsUpdate = heads.instanceMatrix.needsUpdate = true;
   });

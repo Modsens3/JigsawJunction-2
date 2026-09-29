@@ -1,5 +1,5 @@
 // Διαφωτισμός & Επαναστάσεις: το Πάνθεον του Παρισιού και οι σημαίες του 1776, 1789 και 1821
-import { THREE, mat, metal, add, box, boxAt, instanced, M4, heightNoise, terrain, clouds, houseField, flagCloth, orbit, lerp, smooth, clamp, rng, TAU, cypressGeometry, cypressMat } from '../lib.js';
+import { THREE, mat, metal, add, box, boxAt, instanced, M4, heightNoise, terrain, clouds, houseField, flagCloth, crowd, orbit, lerp, smooth, clamp, rng, TAU, cypressGeometry, cypressMat } from '../lib.js';
 import { buildPantheon, flagTexUSA, flagTexFR, flagTexGR } from '../models_pantheon.js';
 
 export default async function (engine) {
@@ -27,6 +27,8 @@ export default async function (engine) {
     sample: (rr) => { const a = rr() * TAU, d = 130 + Math.sqrt(rr()) * 700, x = Math.cos(a) * d, z = 30 + Math.sin(a) * d; if (Math.abs(x) < 105 && z > -60 && z < 130) return null; return { x, y: height(x, z), z, yaw: Math.floor(rr() * 2) * 1.5708 + (rr() - 0.5) * 0.1 }; } });
   const tr = [], cyp = cypressGeometry(12, 2); for (let i = 0; i < 90; i++) { const a = r() * TAU, d = 110 + r() * 250, x = Math.cos(a) * d, z = 30 + Math.sin(a) * d; if (Math.abs(x) < 100 && z > -55 && z < 125) continue; tr.push(M4([x, height(x, z), z], [0, r() * TAU, 0], 0.8 + r() * 0.6)); } instanced(scene, cyp, cypressMat(), tr);
   clouds(ctx, { n: 12, area: [-4000, 4000, 700, 1300, -4500, 1000], size: [900, 1800], color: 0xffd0b8, bottom: 0xb48a8a, opacity: 0.85, seed: 11, drift: 4 });
+  crowd(ctx, { n: 140, height: () => 0, seed: 6, speed: 1.2, spread: 10, scale: 1.05, colors: [0x2a3f8a, 0xf1ece0, 0xc0392b, 0x3a3a44, 0x6a4a3a, 0xd6c9a8],
+    path: () => Array.from({ length: 4 }, () => [(r() - 0.5) * 150, 62 + r() * 80]) });
   ctx.hooks.push((t) => flags.forEach((f) => f.userData.update(t)));
   ctx.cameraFn = orbit({ center: [0, 0, 30], radius: 175, height: 22, a0: -0.55, a1: 0.35, look: [0, 34, 0], T: 12.4, fov0: 36, fov1: 33 });
   return ctx;

@@ -1,5 +1,5 @@
 // Ρωμαϊκή Αυτοκρατορία: Κολοσσαίο, 80 μ.Χ., ώρα δειλινού
-import { THREE, mat, add, box, boxAt, instanced, M4, heightNoise, terrain, clouds, cypressGeometry, cypressMat, pineGeometry, vcMat, houseField, orbit, lerp, smooth, clamp, rng, TAU, mergeGeometries } from '../lib.js';
+import { THREE, mat, add, box, boxAt, instanced, M4, heightNoise, terrain, clouds, cypressGeometry, cypressMat, pineGeometry, vcMat, houseField, crowd, orbit, lerp, smooth, clamp, rng, TAU, mergeGeometries } from '../lib.js';
 import { buildColosseum, buildAqueduct, buildColossus, romanRoad } from '../models_roman.js';
 
 export default async function (engine) {
@@ -45,6 +45,10 @@ export default async function (engine) {
   instanced(scene, cypressGeometry(14, 3), cypressMat(), cm);
   clouds(ctx, { n: 14, area: [-4000, 4000, 900, 1500, -4500, 500], size: [900, 1800], color: 0xffe9d0, bottom: 0xc7aaa0, opacity: 0.85, seed: 9, drift: 4 });
 
+  // θεατές γύρω από το Κολοσσαίο και στον δρόμο
+  crowd(ctx, { n: 170, height: (x, z) => height(x, z), seed: 3, speed: 1.3, spread: 8, scale: 1.1, colors: [0xf1ece0, 0xe6dcc0, 0xb03a2e, 0x8a5a9a, 0x3a5f9a, 0xc9a24a],
+    path: () => Array.from({ length: 41 }, (_, k) => [Math.cos(k / 40 * TAU) * 118, Math.sin(k / 40 * TAU) * 100]) });
+  crowd(ctx, { n: 50, height: (x, z) => height(x, z), seed: 5, speed: 1.4, spread: 3, scale: 1.1, colors: [0xf1ece0, 0xb03a2e, 0x8a5a9a], path: () => [[-260, 68], [260, 197]] });
   ctx.cameraFn = orbit({ center: [0, 0, 0], radius: 265, height: 38, a0: 3.75, a1: 3.05, look: [0, 20, 0], T: 12.4, fov0: 34, fov1: 32 });
   return ctx;
 }

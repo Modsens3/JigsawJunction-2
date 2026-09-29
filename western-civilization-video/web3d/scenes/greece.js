@@ -1,5 +1,5 @@
 // Αρχαία Ελλάδα: Ακρόπολη της Αθήνας το πρωί (5ος αι. π.Χ.)
-import { THREE, mat, add, box, instanced, M4, heightNoise, terrain, makeWater, clouds, cypressGeometry, cypressMat, blobGeometry, mergeGeometries, orbit, lerp, smooth, clamp, rng, TAU, V3 } from '../lib.js';
+import { THREE, mat, add, box, instanced, M4, heightNoise, terrain, makeWater, clouds, cypressGeometry, cypressMat, blobGeometry, mergeGeometries, crowd, orbit, lerp, smooth, clamp, rng, TAU, V3 } from '../lib.js';
 import { marbleMats, buildParthenon, buildPropylaia, buildAthenaPromachos } from '../models_greek.js';
 
 export default async function (engine) {
@@ -98,6 +98,10 @@ export default async function (engine) {
   instanced(scene, cypressGeometry(14, 3), cypressMat(), cm);
   clouds(ctx, { n: 16, area: [-4000, 3500, 900, 1500, -5000, -800], size: [900, 1800], color: 0xfff3e2, bottom: 0xcdbcb4, opacity: 0.85, seed: 5, drift: 4 });
 
+  // πομπή των Παναθηναίων
+  crowd(ctx, { n: 80, height: (x, z) => height(x, z), seed: 4, speed: 1.1, spread: 2.2, colors: [0xf1ece0, 0xf6f0e2, 0xd9a83a, 0x3a5f9a, 0xb03a2e, 0xe8d8b0],
+    path: () => [[-96, 12], [-70, 26], [-20, 34], [40, 32], [82, 20], [92, 0], [86, -18]] });
+  crowd(ctx, { n: 30, height: (x, z) => height(x, z), seed: 9, speed: 0.6, spread: 6, colors: [0xf1ece0, 0xd9a83a, 0x3a5f9a], path: () => [[70, 30], [96, 26], [104, 8], [96, -12]] });
   ctx.cameraFn = orbit({ center: [0, 0, 0], radius: 108, height: 11, a0: -0.05, a1: 0.85, look: [-4, 7.5, 0], T: 12.4, fov0: 38, fov1: 36 });
   return ctx;
 }

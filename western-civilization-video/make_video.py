@@ -115,7 +115,7 @@ def ui_timeline(c, t, idx):
             c.text(x, 702, lab, 12, (170, 174, 190), "sans", "mm")
 
 
-CARD = (890, 104, 1238, 548)
+CARD = (890, 98, 1238, 556)
 
 
 def card_slide(t):
@@ -149,7 +149,7 @@ def ui_card(base, ui, t, T, s):
     lc = Canvas(layer)
     key, name, year, desc = invs[k]
     pop = 0.86 + 0.14 * back_out(ts / 0.6)
-    my = y0 + 168
+    my = y0 + 160
     # μενταγιόν: σκιά, πλάκα, στεφάνι
     lc.circle(cx + 3, my + 8, 106 * pop, fill=(0, 0, 0, 110))
     for k in range(14):                       # μαλακή ακτινική διαβάθμιση στο μενταγιόν
@@ -158,7 +158,7 @@ def ui_card(base, ui, t, T, s):
     ALL_ICONS[key](lc.sub(cx, my, 196 * pop), max(0.0, ts))
     lc.circle(cx, my, 106 * pop, outline=alpha(GOLD, 0.9), width=2)
     lc.arc(cx, my, 100 * pop, 100 * pop, 200, 290, (255, 255, 255, 90), width=2.4)     # ανταύγεια
-    y = y0 + 300
+    y = y0 + 291
     for ln in wrap(name, 23, "serif_b", 316):
         lc.text(cx, y, ln, 23, (255, 255, 255), "serif_b", "mm")
         y += 29
@@ -366,7 +366,7 @@ def main():
         for sgm in segs:
             f.write(f"file '{sgm}'\n")
     out = os.path.join(HERE, "western_civilization.mp4")
-    subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", lst, "-i", wav, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+    subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", lst, "-i", wav, "-c:v", "libx264", "-preset", "slow", "-crf", "22", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
                     "-shortest", "-movflags", "+faststart", out], check=True)
     os.remove(wav)
     print("Έτοιμο:", out)
