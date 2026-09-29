@@ -9,7 +9,7 @@ const sm = (uniforms, fragmentShader) => new THREE.ShaderMaterial({ uniforms, ve
 
 const BRIGHT = `
 uniform sampler2D tSrc; uniform vec2 uTexel; uniform float uThresh, uExposure; varying vec2 vUv;
-vec3 f(vec2 o){ vec3 c = texture2D(tSrc, vUv + o*uTexel).rgb * uExposure; float l = max(max(c.r,c.g),c.b); return c * clamp((l - uThresh)/max(l,1e-4), 0.0, 1.0) ; }
+vec3 f(vec2 o){ vec3 c = texture2D(tSrc, vUv + o*uTexel).rgb; c = (c == c) ? min(c, vec3(60.0)) : vec3(0.0); c *= uExposure; float l = max(max(c.r,c.g),c.b); return c * clamp((l - uThresh)/max(l,1e-4), 0.0, 1.0) ; }
 void main(){ vec3 c = (f(vec2(-1.,-1.)) + f(vec2(1.,-1.)) + f(vec2(-1.,1.)) + f(vec2(1.,1.))) * 0.25; gl_FragColor = vec4(min(c, vec3(8.0)), 1.0); }`;
 const BLUR = `
 uniform sampler2D tSrc; uniform vec2 uDir; varying vec2 vUv;

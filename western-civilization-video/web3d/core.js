@@ -25,7 +25,7 @@ export class Engine {
   newContext(opts = {}) {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(opts.fov || 40, this.w / this.h, 0.5, 40000);
-    return { engine: this, scene, camera, THREE, hooks: [], settings: { bloom: 0.35, bloomRadius: 0.6, bloomThreshold: 0.9, exposure: 0.6, ao: true, grade: {} } };
+    return { engine: this, scene, camera, THREE, hooks: [], settings: { bloom: 0.35, bloomRadius: 0.6, bloomThreshold: 0.9, exposure: 0.6, ao: true, grade: {}, viewShift: opts.viewShift ?? 0.13 } };
   }
 
   // Φωτισμός «ημέρας»: φυσικός ουρανός (Preetham), ήλιος με σκιές, λυχνάρι ουρανού, περιβάλλον IBL από τον ίδιο ουρανό.
@@ -50,10 +50,18 @@ export class Engine {
     ctx.envMap = this.pmrem.fromScene(envScene, 0.02).texture;
     // ο ουρανός είναι στατικός: τον «ψήνουμε» μία φορά σε cubemap (γρήγορο background)
     ctx.horizonTab = this.horizonTable(envScene, o.fogElevation ?? 4);
-    u.showSunDisc.value = o.sunDisc ?? true;
+    u.showSunDisc.value = false;
     const cube = new THREE.WebGLCubeRenderTarget(o.skyRes ?? 1536, { type: THREE.HalfFloatType });
     new THREE.CubeCamera(1, 100000, cube).update(this.renderer, envScene);
     scene.background = cube.texture;
+    if (o.sunDisc !== false) {   // δίσκος ήλιου + λάμψη (κανονική ένταση, χωρίς υπερχείλιση half-float)
+      const sm = new THREE.Mesh(new THREE.SphereGeometry(70, 24, 16), new THREE.MeshBasicMaterial({ color: new THREE.Color(o.sunColor ?? 0xfff2dc).multiplyScalar(o.sunDiscGain ?? 26), fog: false }));
+      sm.position.copy(sunDir).multiplyScalar(14000); scene.add(sm);
+      const cvs = document.createElement('canvas'); cvs.width = cvs.height = 256; const cx = cvs.getContext('2d'), gr = cx.createRadialGradient(128, 128, 0, 128, 128, 128);
+      gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.15, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); cx.fillStyle = gr; cx.fillRect(0, 0, 256, 256);
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cvs), color: new THREE.Color(o.sunColor ?? 0xfff2dc).multiplyScalar(2.2), transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+      sp.scale.setScalar(2600); sp.position.copy(sm.position); scene.add(sp);
+    }
     // ήλιος
     scene.backgroundIntensity = 1;
     const sunCol = new THREE.Color(o.sunColor ?? 0xfff2dc);
@@ -92,7 +100,9 @@ export class Engine {
       this.renderer.readRenderTargetPixels(rt, 0, 0, 8, 8, buf);
       let r = 0, g = 0, b = 0;
       for (let k = 0; k < 64; k++) { r += THREE.DataUtils.fromHalfFloat(buf[k * 4]); g += THREE.DataUtils.fromHalfFloat(buf[k * 4 + 1]); b += THREE.DataUtils.fromHalfFloat(buf[k * 4 + 2]); }
-      tab.push(new THREE.Color(r / 64, g / 64, b / 64));
+      const col = new THREE.Color(r / 64, g / 64, b / 64), mx = Math.max(col.r, col.g, col.b), cap = 1.7;   // όριο φωτεινότητας ομίχλης (αποφεύγει «λευκό-out» προς τον ήλιο)
+      if (mx > cap) col.multiplyScalar(cap / mx);
+      tab.push(col);
     }
     this.renderer.setRenderTarget(null);
     rt.dispose();
@@ -111,7 +121,8 @@ export class Engine {
         const tex = await new EXRLoader().loadAsync(mod.default);
         tex.mapping = THREE.EquirectangularReflectionMapping;
         const rt = this.pmrem.fromEquirectangular(tex);
-        scene.environment = rt.texture;
+        ctx.envMap = rt.texture;
+        scene.environment = null;
         scene.environmentIntensity = o.envIntensity ?? 0.5;
       } catch (e) { console.log('hdri fail', e.message); }
     }
@@ -139,10 +150,24 @@ export class Engine {
     return ctx;
   }
 
+  // ctx.shadowShots = [{until, center:[x,y,z], extent}] – μετακινεί το «παράθυρο» των σκιών ανά πλάνο (οι σκιές παραμένουν στατικές μέσα σε κάθε πλάνο)
+  updateShadowShot(ctx, t) {
+    const list = ctx.shadowShots; if (!list) return;
+    let k = list.findIndex((s) => t < s.until); if (k < 0) k = list.length - 1;
+    if (ctx.shadowShotIdx === k) return;
+    ctx.shadowShotIdx = k; ctx.shadowsDone = false;
+    const s = list[k], sun = ctx.sun, cam = sun.shadow.camera, e = s.extent;
+    sun.position.set(...s.center).addScaledVector(ctx.sunDir, e * 3); sun.target.position.set(...s.center); sun.target.updateMatrixWorld(); sun.updateMatrixWorld();
+    Object.assign(cam, { left: -e, right: e, top: e, bottom: -e, near: 1, far: e * 7 }); cam.updateProjectionMatrix();
+  }
+
   render(ctx, t) {
+    this.updateShadowShot(ctx, t);
     this.renderer.shadowMap.needsUpdate = !!ctx.dynamicShadows || !ctx.shadowsDone; ctx.shadowsDone = true;
     for (const h of ctx.hooks) h(t);
     ctx.cameraFn(t, ctx.camera);
+    const sh = ctx.settings.viewShift;   // μετατόπιση προβολής: το θέμα μένει αριστερά, μακριά από την κάρτα εφεύρεσης
+    if (sh) ctx.camera.setViewOffset(this.w, this.h, sh * this.w, 0, this.w, this.h); else ctx.camera.clearViewOffset();
     ctx.camera.updateMatrixWorld(true);
     if (ctx.horizonTab && ctx.scene.fog && ctx.fogGain) {   // χρώμα ομίχλης = χρώμα ορίζοντα προς την κατεύθυνση της κάμερας
       const f = new THREE.Vector3(); ctx.camera.getWorldDirection(f);

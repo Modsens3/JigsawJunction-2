@@ -28,6 +28,10 @@ window.loadScene = async (name) => {
   if (ctx) { dispose(ctx); ctx = null; }
   const mod = await import(`./scenes/${name}.js`);
   const c = await mod.default(engine);
+  c.scene.traverse((o) => {   // έλεγχος για NaN σε γεωμετρίες
+    const p = o.geometry && o.geometry.attributes && o.geometry.attributes.position;
+    if (p) { for (let i = 0; i < p.array.length; i++) if (Number.isNaN(p.array[i])) { console.log('NaN geometry:', o.type, o.name, o.geometry.type, 'index', i); break; } }
+  });
   engine.finish(c);
   ctx = c; window.ctx = c;
   return true;

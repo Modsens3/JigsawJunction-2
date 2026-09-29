@@ -152,10 +152,12 @@ def ui_card(base, ui, t, T, s):
     my = y0 + 168
     # μενταγιόν: σκιά, πλάκα, στεφάνι
     lc.circle(cx + 3, my + 8, 106 * pop, fill=(0, 0, 0, 110))
-    lc.circle(cx, my, 106 * pop, fill=CARD_BG)
+    for k in range(14):                       # μαλακή ακτινική διαβάθμιση στο μενταγιόν
+        f = k / 13
+        lc.circle(cx - 8 * (1 - f), my - 10 * (1 - f), 106 * pop * (1 - 0.66 * f), fill=(int(20 + 26 * f), int(24 + 30 * f), int(40 + 46 * f)))
     ALL_ICONS[key](lc.sub(cx, my, 196 * pop), max(0.0, ts))
     lc.circle(cx, my, 106 * pop, outline=alpha(GOLD, 0.9), width=2)
-    lc.circle(cx, my, 100 * pop, outline=(255, 255, 255, 40), width=1)
+    lc.arc(cx, my, 100 * pop, 100 * pop, 200, 290, (255, 255, 255, 90), width=2.4)     # ανταύγεια
     y = y0 + 300
     for ln in wrap(name, 23, "serif_b", 316):
         lc.text(cx, y, ln, 23, (255, 255, 255), "serif_b", "mm")
